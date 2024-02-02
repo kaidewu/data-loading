@@ -5,6 +5,7 @@ def main():
     data_loading = DataLoading(
         excel_name="250124 Carga CI.xlsx",
         transaction=True,
+        environment="PRO",
         query="INSERT INTO FOIN_CONF_CONFIGURATIONS VALUES ('%s', 3, 40, '%s', 2, '%s', '%s', '%s', '%s', '%s', '%s')",
         audi_query="INSERT INTO AUDI_FOIN_CONF_CONFIGURATIONS VALUES (("
                    "SELECT COCO_ID FROM FOIN_CONF_CONFIGURATIONS WHERE COCO_TITLE = '%s' AND CENTER_NAME = '%s'"
@@ -14,7 +15,7 @@ def main():
                    "'%s', 1, '%s', '%s', '%s', '%s')"
     )
 
-    data_loading.write_sql_query_file()
+    data_loading.get_data_from_bbdd("CENTER", "SERVICE", "SPECIALITY", "FORM", "BENEFIT")
 
 
 if __name__ == "__main__":
