@@ -1,16 +1,19 @@
 import pandas as pd
+import numpy as np
 from os import path
-from typing import List, Optional, Any
+from typing import List, Optional, Union, Tuple
 from core.config import settings
+from unidecode import unidecode
 
 
 class DataLoading:
     def __init__(
             self,
-            excel_name: str,
-            transaction: bool,
-            query: str,
-            audi_query: str
+            excel_name: str = "",
+            transaction: bool = False,
+            environment: str = "PRE",
+            query: Optional[str] = "",
+            audi_query: Optional[str] = ""
     ) -> None:
         """
         :param excel_name: Name of Excel file
@@ -22,26 +25,31 @@ class DataLoading:
         """
         self.excel_name: str = excel_name
         self.transaction: bool = transaction
+        self.environment: str = environment
         self.query: str = query
-        self.audi_query: Optional[str] = audi_query
+        self.audi_query: str = audi_query
 
         # Settings variable
         self.input_path: str = settings.input_path
         self.output_result_path: str = settings.output_result_path
+        if self.environment == "PRO":
+            self.bbdd_excel: str = settings.bbddpro_excel
+        else:
+            self.bbdd_excel: str = settings.bbddpre_excel
 
-    def _read_excel_pd(self) -> Any:
+    def _read_excel_pd(self):
         """
         Get DateFrame of Excel file with Pandas
         :return: DateFrame
         """
         return pd.read_excel(path.join(self.input_path, self.excel_name))
 
-    def _get_columns_name(self) -> Any:
+    def _get_columns_name(self) -> List[str]:
         """
         Get the columns names
-        :return: I guess Index. Better go to the Pandas documents to read it
+        :return: List[str]
         """
-        return self._read_excel_pd().columns
+        return self._read_excel_pd().columns.ravel()
 
     def _list_each_content(self) -> List[List[str]]:
         """
@@ -53,18 +61,22 @@ class DataLoading:
     def _list_audi_query(self) -> List[List[str]]:
         return [query*2 for query in self._list_each_content()]
 
-    def _results_query(self) -> List[str]:
+    def _results_query(self) -> Union[List[str] | List]:
         """
         Return list of SQL Query
         :return: List[str]
         """
+        if self.query == "":
+            return []
         return [self.query % tuple(query) for query in self._list_each_content()]
 
-    def _results_audi_query(self) -> List[str]:
+    def _results_audi_query(self) -> Union[List[str] | List]:
         """
         List of AUDITORY query
         :return: List[str]
         """
+        if self.audi_query == "":
+            return []
         return [self.audi_query % tuple(audi_query) for audi_query in self._list_audi_query()]
 
     def write_sql_query_file(self) -> None:
@@ -73,19 +85,27 @@ class DataLoading:
         :return: None
         """
         with open(self.output_result_path, "w", encoding="utf-8") as results:
-            for query, audi_query in zip(self._results_query(), self._results_audi_query()):
-                if not self.transaction:
-                    results.write(
-                        f"BEGIN TRANSACTION\n"
-                        f"{query}\n"
-                        f"{audi_query}\n"
-                        f"COMMIT\n"
-                    )
-                else:
-                    results.write(
-                        f"BEGIN TRANSACTION\n"
-                        f"{query}\n"
-                        f"{audi_query}\n"
-                        f"ROLLBACK\n"
-                    )
+            results.write(
+                f"BEGIN TRANSACTION\n"
+                f"{'\n'.join(self._results_query())}\n"
+                f"{'\n'.join(self._results_audi_query())}\n"
+                f"{"COMMIT" if not self.transaction else "ROLLBACK"}\n"
+            )
 
+    def _get_zip_results_args(self, arg: str):
+        df = pd.read_excel(self.bbdd_excel, sheet_name=arg)
+        list_results_id: List[str] = []
+        list_results_name: List[str] = []
+        for data in self._read_excel_pd()[arg].tolist():
+            df_bbdd = df[df[arg].apply(lambda s: unidecode(s)) == unidecode(data)]
+            for content in df_bbdd[f"{arg}_ID"].tolist():
+                list_results_id.append(content if pd.notna(content) else np.nan)
+            for content in df_bbdd[arg].tolist():
+                list_results_name.append(content if pd.notna(content) else np.nan)
+        return zip(list_results_id, list_results_name)
+
+    def get_data_from_bbdd(self, *args):
+        with pd.ExcelWriter(settings.output_bbdd_path) as excel:
+            for arg in args:
+                df_excel = pd.DataFrame(list(self._get_zip_results_args(arg)), columns=[f"{arg}_ID", arg])
+                df_excel.to_excel(excel, sheet_name=arg, index=False)
